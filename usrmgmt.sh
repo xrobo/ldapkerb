@@ -112,18 +112,20 @@ f_chpass () {
  local newpass=${2}
  local oldpass=${3}
  local query="change_password -pw $newpass $id"
+ local result2=0
  ldap_pass "uid=${id}" "ou=People" $newpass $oldpass
  local result1=${?}
  MSG=${MSG:-"Password for ${id} has been changed"}
  MSG="(LDAP chpass) $MSG"
- [ ${result1} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
- f_log "$MSG"
- kerb_wrapper ${query}
- local result2=${?}
- MSG=${MSG:-"Password for ${id} has been changed"}
- MSG="(KERB chpass) $MSG"
- [ ${result2} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
- f_log "$MSG"
+ if [ ${result1} -eq 0 ]; then
+  MSG="[DONE] $MSG"
+  f_log "$MSG"
+  f_chpass_krb ${id} ${newpass}
+  result2=${?}
+ else
+  MSG="[FAIL] $MSG"
+  f_log "$MSG"
+ fi
  return $(( $result1 + $result2 ))
 }
 
