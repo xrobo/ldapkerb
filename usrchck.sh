@@ -6,11 +6,6 @@
 #
 CONF=~/.config/usrmgmt.conf
 
-LOG=~/log/usrmgmt.log
-WEBLOG=/var/www/ldapkerb/usrmgmt.log
-ROTATECONF=~/.config/logrotate.conf
-ROTATESTAT=~/.config/logrotate.stat
-
 ###############################################################################
 #
 # Including configuration
@@ -53,10 +48,10 @@ f_help () {
 # Writing log
 #
 f_log () {
- echo "${DATE} ${MSG}" >> "${LOG}"
- echo "${DATE} ${MSG}" >> "${WEBLOG}"
+ local timestamp=$(/bin/date "+%Y-%m-%d %H:%M")
+ [ -n "${LOG}" ] && echo "${timestamp} ${MSG}" >> "${LOG}"
+ [ -n "${WEBLOG}" ] && echo "${timestamp} ${MSG}" >> "${WEBLOG}"
  echo "${MSG}" > "${TEMPFILE}"
- #/usr/bin/logger "${MSG}"
 }
 
 ###############################################################################
@@ -84,14 +79,14 @@ f_chpass () {
  MSG=${MSG:-"Password for ${id} has been changed"}
  MSG="(LDAP chpass) $MSG"
  [ ${result1} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
- #f_log "$MSG"
+ f_log "$MSG"
  echo "${MSG}" > "${TEMPFILE}"
  kerb_wrapper ${query}
  local result2=${?}
  MSG=${MSG:-"Password for ${id} has been changed"}
  MSG="(KERB chpass) $MSG"
  [ ${result2} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
- #f_log "$MSG"
+ f_log "$MSG"
  echo "${MSG}" >> "${TEMPFILE}"
  return $(( $result1 + $result2 ))
 }

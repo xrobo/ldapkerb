@@ -6,11 +6,6 @@
 #
 CONF=~/.config/usrmgmt.conf
 
-LOG=~/log/usrmgmt.log
-WEBLOG=/var/www/ldapkerb/usrmgmt.log
-ROTATECONF=~/.config/logrotate.conf
-ROTATESTAT=~/.config/logrotate.stat
-
 ###############################################################################
 #
 # Including configuration
@@ -53,9 +48,10 @@ f_help () {
 # Writing log
 #
 f_log () {
- echo "${DATE} ${MSG}" | /usr/bin/tee -a "${LOG}"
- echo "${DATE} ${MSG}" >> "${WEBLOG}"
- #/usr/bin/logger "${MSG}"
+ local timestamp=$(/bin/date "+%Y-%m-%d %H:%M")
+ [ -n "${LOG}" ] && echo "${timestamp} ${MSG}" >> "${LOG}"
+ [ -n "${WEBLOG}" ] && echo "${timestamp} ${MSG}" >> "${WEBLOG}"
+ echo "${timestamp} ${MSG}"
 }
 
 ###############################################################################
@@ -183,7 +179,6 @@ OPTION_ACTION=${1:-help}
 OPTION_USERNAME=${2:-empty_val}
 OPTION_NEWPASS=${3:-empty_val}
 OPTION_OLDPASS=${4}
-DATE=$(/bin/date "+%Y-%m-%d %H:%M")
 
 f_rotate
 
