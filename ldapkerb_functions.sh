@@ -9,9 +9,6 @@ UDATE=$(date -u "+%Y%m%d%H%M%SZ")
 
 # TODO:
 #  - write "Usage" for God sake!
-#  - use "uid=user" instead of "user", split by =
-#  - check LDAP connection before continue
-#  - put LDAP password to file
 #
 
 ###############################################################################
@@ -21,9 +18,8 @@ UDATE=$(date -u "+%Y%m%d%H%M%SZ")
 set_msg_ldap () {
  local log=${1}
  if [ -f "${log}" ]; then
-  local msg_error="$(/bin/grep -iE '(bind|search|result|modify):' "${log}" | tr -d '[:cntrl:]')"
+  local msg_error="$(/bin/grep -iE '(bind|search|result|modify|\)):' "${log}" | tr -d '[:cntrl:]')"
   local msg_detail="$(/bin/grep -i 'info:' "${log}" | tr -d '[:cntrl:]')"
-  #cat $log
   if [ -n "${msg_detail}" ]; then
    MSG="${msg_error}. ${msg_detail}"
   else
@@ -41,9 +37,9 @@ set_msg_ldap () {
 ldap_wrapper () {
  MSG=""
  local action=${1}
- local ldif=${2}
+ local ldif_or_filter=${2}
  local bin
- local return_code
+ local retval
  case ${action} in
   mod)
    bin="/usr/bin/ldapmodify"
@@ -55,6 +51,10 @@ ldap_wrapper () {
    # Warning! Doing a recursive delete
    bin="/usr/bin/ldapdelete -r"
    ;;
+  srch)
+   bin="/usr/bin/ldapsearch"
+   local properties=${3}
+   ;;
   *)
    MSG="Action was not specified for \"ldap_wrapper\""
    return 1
@@ -63,13 +63,23 @@ ldap_wrapper () {
  
  umask 0066
 
- ${bin} ${OPTIONS} &>"${LDAPOUTPUT}"<<-EOT
-$ldif
+ if [ "$action" = "srch" ]; then
+  ${bin} ${OPTIONS} "${ldif_or_filter}" -LLL ${properties} &>"${LDAPOUTPUT}"
+  retval=${?}
+  if [ ${retval} -eq 0 ]; then
+   MSG=$(cat "${LDAPOUTPUT}")
+  else
+   set_msg_ldap "${LDAPOUTPUT}"
+  fi
+ else
+  ${bin} ${OPTIONS} &>"${LDAPOUTPUT}"<<-EOT
+$ldif_or_filter
 EOT
- return_code=${?}
- [ ${return_code} -eq 0 ] || set_msg_ldap "${LDAPOUTPUT}"
+  retval=${?}
+  [ ${retval} -eq 0 ] || set_msg_ldap "${LDAPOUTPUT}"
+ fi
  /bin/rm -f "${LDAPOUTPUT}"
- return ${return_code}
+ return ${retval}
 }
 
 ###############################################################################
@@ -78,19 +88,16 @@ EOT
 #
 ldap_pass () {
  MSG=""
- local id=${1}
- local ou=${2:+",${2}"}
- local newpass=${3}
- local oldpass=${4}
- local return_code
- if [ -n "${oldpass}" ]; then
-  newpass="${newpass} -a ${oldpass}"
- fi
- /usr/bin/ldappasswd $OPTIONS -s ${newpass} ${id}${ou},${DC} &> "${LDAPOUTPUT}"
- return_code=${?}
- [ ${return_code} -eq 0 ] || set_msg_ldap "${LDAPOUTPUT}"
+ local dn=${1}
+ local newpass=${2}
+ local oldpass=${3}
+ local retval
+ [ -n "${oldpass}" ] && newpass="${newpass} -a ${oldpass}"
+ /usr/bin/ldappasswd $OPTIONS -s ${newpass} ${dn} &> "${LDAPOUTPUT}"
+ retval=${?}
+ [ ${retval} -eq 0 ] || set_msg_ldap "${LDAPOUTPUT}"
  /bin/rm -f "${LDAPOUTPUT}"
- return ${return_code}
+ return ${retval}
 }
 
 ###############################################################################
@@ -112,8 +119,8 @@ contains_element () {
 ###############################################################################
 #
 # LDAP: Getting the next free id number
-# Warning! Resurse consuming operation. Use better id generator in a batch mode.
-# Have not figure out how to get it proper way.
+# Warning! Resource consuming operation. Use a better id generator in a batch mode.
+# Have not figure out how to get it in a proper way.
 #
 get_free_id () {
  local class=${1}

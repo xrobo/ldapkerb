@@ -69,16 +69,17 @@ f_rotate () {
 # Adding principal
 #
 f_add () {
- local id=${1}
- local pass=${2}
+ local id=$1
+ local pass=$2
+ local retval
  local query="addprinc +requires_preauth -allow_svr -clearpolicy -pw ${pass} ${id}"
- kerb_wrapper ${query}
- local result=${?}
+ kerb_wrapper $query
+ retval=$?
  MSG=${MSG:-"Principal ${id}@${REALM} has been created"}
  MSG="(KERB create) $MSG"
- [ ${result} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
+ [ $retval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
- return ${result}
+ return $retval
 }
 
 ###############################################################################
@@ -86,43 +87,51 @@ f_add () {
 # Changing principal's password
 #
 f_chpass_krb () {
- local id=${1}
- local newpass=${2}
+ local id=$1
+ local newpass=$2
+ local retval
  local query="change_password -pw $newpass $id"
- kerb_wrapper ${query}
- local result=${?}
+ kerb_wrapper $query
+ retval=$?
  MSG=${MSG:-"Password for ${id} has been changed"}
  MSG="(KERB chpass) $MSG"
- [ ${result} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
+ [ $retval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
- return $result
+ return $retval
 }
 
 ###############################################################################
 #
 # Changing user's password
-# TODO: convert "ou=People" to variable
 #
 f_chpass () {
- local id=${1}
- local newpass=${2}
- local oldpass=${3}
+ local id=$1
+ local newpass=$2
+ local oldpass=$3
  local query="change_password -pw $newpass $id"
- local result2=0
- ldap_pass "uid=${id}" "ou=People" $newpass $oldpass
- local result1=${?}
- MSG=${MSG:-"Password for ${id} has been changed"}
- MSG="(LDAP chpass) $MSG"
- if [ ${result1} -eq 0 ]; then
-  MSG="[DONE] $MSG"
-  f_log "$MSG"
-  f_chpass_krb ${id} ${newpass}
-  result2=${?}
+ local lretval=1
+ local kretval=1
+ local dn=''
+ ldap_wrapper srch "(&(objectClass=posixAccount)(uid=${id}))" "dn" && dn=$(echo "$MSG" | awk '/^dn:/{print $2}')
+ if [ -n "$dn" ]; then
+  ldap_pass $dn $newpass $oldpass
+  lretval=$?
+  MSG=${MSG:-"Password for ${id} has been changed"}
+  MSG="(LDAP chpass) $MSG"
+  if [ $lretval -eq 0 ]; then
+   MSG="[DONE] $MSG"
+   f_log "$MSG"
+   f_chpass_krb ${id} ${newpass}
+   kretval=$?
+  else
+   MSG="[FAIL] $MSG"
+   f_log "$MSG"
+  fi
  else
-  MSG="[FAIL] $MSG"
+  MSG="[FAIL] (LDAP search) User with the uid \"${id}\" not found"
   f_log "$MSG"
  fi
- return $(( $result1 + $result2 ))
+ return $(( $lretval + $kretval ))
 }
 
 ###############################################################################
@@ -130,21 +139,23 @@ f_chpass () {
 # Locking user
 #
 f_lock () {
- local id=${1}
+ local id=$1
+ local lretval
+ local kretval
  ldap_lock "uid=${id}" "ou=People"
- local result1=${?}
+ lretval=$?
  MSG=${MSG:-"Account ${id} has been locked"}
  MSG="(LDAP __lock) $MSG"
- [ ${result1} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
+ [ $lretval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
 
  kerb_lock "krbPrincipalName=${id}@${REALM}" ${PRINCOU}
- local result2=${?}
+ kretval=$?
  MSG=${MSG:-"Account ${id} has been locked"}
  MSG="(KERB __lock) $MSG"
- [ ${result2} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
+ [ $kretval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
- return $(( $result1 + $result2 ))
+ return $(( $lretval + $kretval ))
 }
 
 
@@ -153,21 +164,23 @@ f_lock () {
 # Unlocking user
 #
 f_unlock () {
- local id=${1}
+ local id=$1
+ local lretval
+ local kretval
  ldap_unlock "uid=${id}" "ou=People"
- local result1=${?}
+ lretval=$?
  MSG=${MSG:-"Account ${id} has been unlocked"}
  MSG="(LDAP unlock) $MSG"
- [ ${result1} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
+ [ $lretval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
 
  kerb_unlock "krbPrincipalName=${id}@${REALM}" ${PRINCOU}
- local result2=${?}
+ kretval=$?
  MSG=${MSG:-"Account ${id} has been unlocked"}
  MSG="(KERB unlock) $MSG"
- [ ${result2} -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
+ [ $kretval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
- return $(( $result1 + $result2 ))
+ return $(( $lretval + $kretval ))
 }
 
 ###############################################################################
