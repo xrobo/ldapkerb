@@ -2,14 +2,10 @@
 
 ###############################################################################
 #
-# Global variables
+# Including configuration
 #
 CONF=~/.config/usrmgmt.conf
 
-###############################################################################
-#
-# Including configuration
-#
 if [ -f ${CONF} ]; then
  . ${CONF}
 else
@@ -121,7 +117,7 @@ f_chpass () {
   if [ $lretval -eq 0 ]; then
    MSG="[DONE] $MSG"
    f_log "$MSG"
-   f_chpass_krb ${id} ${newpass}
+   f_chpass_krb $id $newpass
    kretval=$?
   else
    MSG="[FAIL] $MSG"
@@ -189,9 +185,11 @@ f_unlock () {
 #
 
 OPTION_ACTION=${1:-help}
-OPTION_USERNAME=${2:-empty_val}
-OPTION_NEWPASS=${3:-empty_val}
+OPTION_USERNAME=${2}
+OPTION_NEWPASS=${3}
 OPTION_OLDPASS=${4}
+
+[ -z "$OPTION_USERNAME" -o -z "$OPTION_NEWPASS" ]  && OPTION_ACTION='help'
 
 f_rotate
 
