@@ -2,14 +2,10 @@
 
 ###############################################################################
 #
-# Global variables
+# Including configuration
 #
 CONF=~/.config/usrmgmt.conf
 
-###############################################################################
-#
-# Including configuration
-#
 if [ -f ${CONF} ]; then
  . ${CONF}
 else
@@ -49,9 +45,9 @@ f_log () {
 # Log rotation
 #
 f_rotate () {
- [ -f $ROTATECONF ] \
-  && /usr/sbin/logrotate -s $ROTATESTAT $ROTATECONF \
-  || echo "Skipping log-rotation: $ROTATECONF not found"
+ [ -f "$ROTATECONF" ] \
+  && /usr/sbin/logrotate -s "$ROTATESTAT" "$ROTATECONF" \
+  || echo "Skipping log-rotation: \"${ROTATECONF}\" not found"
 }
 
 f_menu () {
@@ -244,6 +240,6 @@ CDSBL=r
 CEMPT=b
 ask_id $1 && make_menucaption
 
-#f_rotate
+f_rotate
 
 while f_menu; do :; done

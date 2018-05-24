@@ -136,22 +136,15 @@ f_chpass () {
 #
 f_lock () {
  local id=$1
- local lretval
- local kretval
- ldap_lock "uid=${id}" "ou=People"
- lretval=$?
- MSG=${MSG:-"Account ${id} has been locked"}
- MSG="(LDAP __lock) $MSG"
- [ $lretval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
- f_log "$MSG"
+ local retval
 
  kerb_lock "krbPrincipalName=${id}@${REALM}" ${PRINCOU}
- kretval=$?
+ retval=$?
  MSG=${MSG:-"Account ${id} has been locked"}
  MSG="(KERB __lock) $MSG"
- [ $kretval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
+ [ $retval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
- return $(( $lretval + $kretval ))
+ return $retval
 }
 
 
@@ -161,22 +154,15 @@ f_lock () {
 #
 f_unlock () {
  local id=$1
- local lretval
- local kretval
- ldap_unlock "uid=${id}" "ou=People"
- lretval=$?
- MSG=${MSG:-"Account ${id} has been unlocked"}
- MSG="(LDAP unlock) $MSG"
- [ $lretval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
- f_log "$MSG"
+ local retval
 
  kerb_unlock "krbPrincipalName=${id}@${REALM}" ${PRINCOU}
- kretval=$?
+ retval=$?
  MSG=${MSG:-"Account ${id} has been unlocked"}
  MSG="(KERB unlock) $MSG"
- [ $kretval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
+ [ $retval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
- return $(( $lretval + $kretval ))
+ return $retval
 }
 
 ###############################################################################
@@ -189,25 +175,44 @@ OPTION_USERNAME=${2}
 OPTION_NEWPASS=${3}
 OPTION_OLDPASS=${4}
 
-[ -z "$OPTION_USERNAME" -o -z "$OPTION_NEWPASS" ]  && OPTION_ACTION='help'
 
 f_rotate
 
 case $OPTION_ACTION in
- add)
-  f_add $OPTION_USERNAME $OPTION_NEWPASS
+ add|createkrb)
+  if [ -n "$OPTION_USERNAME" -a -n "$OPTION_NEWPASS" ]; then
+   f_add $OPTION_USERNAME $OPTION_NEWPASS
+  else
+   f_help
+  fi
   ;;
  chpasskrb)
-  f_chpass_krb $OPTION_USERNAME $OPTION_NEWPASS
+  if [ -n "$OPTION_USERNAME" -a -n "$OPTION_NEWPASS" ]; then
+   f_chpass_krb $OPTION_USERNAME $OPTION_NEWPASS
+  else
+   f_help
+  fi
   ;;
  chpass)
-  f_chpass $OPTION_USERNAME $OPTION_NEWPASS $OPTION_OLDPASS
+  if [ -n "$OPTION_USERNAME" -a -n "$OPTION_NEWPASS" ]; then
+   f_chpass $OPTION_USERNAME $OPTION_NEWPASS $OPTION_OLDPASS
+  else
+   f_help
+  fi
   ;;
- lock)
-  f_lock $OPTION_USERNAME
+ lock|lockkrb)
+  if [ -n "$OPTION_USERNAME" ]; then
+   f_lock $OPTION_USERNAME
+  else
+   f_help
+  fi
   ;;
- unlock)
-  f_unlock $OPTION_USERNAME
+ unlock|unlockkrb)
+  if [ -n "$OPTION_USERNAME" ]; then
+   f_unlock $OPTION_USERNAME
+  else
+   f_help
+  fi
   ;;
  *)
   f_help

@@ -88,9 +88,9 @@ EOT
 #
 ldap_pass () {
  MSG=""
- local dn=${1}
- local newpass=${2}
- local oldpass=${3}
+ local dn=$1
+ local newpass=$2
+ local oldpass=$3
  local retval
  [ -n "${oldpass}" ] && newpass="${newpass} -a ${oldpass}"
  /usr/bin/ldappasswd $OPTIONS -s ${newpass} ${dn} &> "${LDAPOUTPUT}"
@@ -261,6 +261,25 @@ ch_group_member () {
 	dn: ${id}${ou},${DC}
 	${act}: memberUid
 	memberUid: $4
+"
+ ldap_wrapper mod "${l}"
+ return ${?}
+}
+
+###############################################################################
+#
+# LDAP: Change object property
+#
+ch_object_property () {
+ local dn=$1
+ local changetype=$2
+ local property=$3
+ local value=$4
+ local l="
+	dn: ${dn}
+	changetype: ${changetype}
+	replace: ${property}
+	${property}: ${value}
 "
  ldap_wrapper mod "${l}"
  return ${?}
