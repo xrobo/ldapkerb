@@ -10,7 +10,7 @@ if [ -f ${CONF} ]; then
  . ${CONF}
 else
  MSG="[$(basename $0)] Can not include file \"${CONF}\" (not found)"
- echo "${MSG}"
+ echo "${MSG}" 1>&2
  /usr/bin/logger "${MSG}"
  exit 1
 fi
@@ -24,7 +24,7 @@ if [ -f ${FUNC} ]; then
  . ${FUNC}
 else
  MSG="[$(basename $0)] Can not include file \"${FUNC}\" (not found)"
- echo "${MSG}"
+ echo "${MSG}" 1>&2
  /usr/bin/logger "${MSG}"
  exit 1
 fi
@@ -45,9 +45,10 @@ f_log () {
 # Log rotation
 #
 f_rotate () {
- [ -f "$ROTATECONF" ] \
-  && /usr/sbin/logrotate -s "$ROTATESTAT" "$ROTATECONF" \
-  || echo "Skipping log-rotation: \"${ROTATECONF}\" not found"
+ [ -n "$ROTATECONF" ] || { echo "Logrotate skipped: No variable for config-file" 1>&2; return 1; }
+ [ -f "$ROTATECONF" ] || { echo "Logrotate skipped: Config-file not found" 1>&2; return 1; }
+ [ -n "$ROTATESTAT" ] || { echo "Logrotate skipped: No variable for stat-file" 1>&2; return 1; }
+ /usr/sbin/logrotate -s "$ROTATESTAT" "$ROTATECONF"
 }
 
 f_menu () {
