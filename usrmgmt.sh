@@ -35,8 +35,36 @@ unset FUNC
 # Show help
 #
 f_help () {
- local help="Usage: $(/bin/basename $0) [ACTION] [OPTIONS]"
- echo $help
+ local usage="
+Usage: $(/bin/basename $0) [ACTION] [OPTIONS]
+
+OPTIONS depend on the ACTION:
+
+ Creating a principal:
+  createkrb {principal} {password}
+
+ Changing principal's password:
+  chpasskrb {principal} {password}
+
+ Changing principal's password as well as user's password in LDAP
+ ('old_password' have to be specified if the password policy applied):
+  chpass {principal} {new_password} [old_password]
+
+ Locking a principal:
+  lockkrb {principal}
+
+ Unlocking a principal:
+  unlockkrb {principal}
+
+ Show this help:
+  help
+
+Example:
+
+ Creating principal for user 'mr.pupkin' with password 'secret':
+  createkrb mr.pupkin secret
+"
+ echo "$usage"
 }
 
 ###############################################################################
