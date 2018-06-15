@@ -64,7 +64,7 @@ ldap_wrapper () {
  umask 0066
 
  if [ "$action" = "srch" ]; then
-  ${bin} ${OPTIONS} "${ldif_or_filter}" -LLL ${properties} &>"${LDAPOUTPUT}"
+  ${bin} ${OPTIONS} "${ldif_or_filter}" -LLL -o ldif-wrap=no ${properties} &>"${LDAPOUTPUT}"
   retval=${?}
   if [ ${retval} -eq 0 ]; then
    MSG=$(cat "${LDAPOUTPUT}")
@@ -231,25 +231,6 @@ rename_ou () {
 
 ###############################################################################
 #
-# LDAP: Moving object to another organizational unit
-#
-ch_object_ou () {
- local id=$1
- local ou=${2:+",${2}"}
- local newou=$3
- local l="
-	dn: ${id}${ou},${DC}
-	changetype: moddn
-	newrdn: ${id}
-	deleteoldrdn: 1
-	newsuperior: ${newou},${DC}
-"
- ldap_wrapper mod "${l}"
- return ${?}
-}
-
-###############################################################################
-#
 # LDAP: Change group member
 #
 ch_group_member () {
@@ -287,77 +268,6 @@ ch_object_property () {
 
 ###############################################################################
 #
-# LDAP: Locking account
-#
-ldap_lock () {
- local id=$1
- local ou=${2:+",${2}"}
- local l="
-	dn: ${id}${ou},${DC}
-	changetype: modify
-	add: pwdAccountLockedTime
-	pwdAccountLockedTime: ${UDATE}
-"
- ldap_wrapper mod "${l}"
- return ${?}
-}
-
-###############################################################################
-#
-# KERB: Locking account
-# Keep ldif with no tab ('-' makes trouble)
-#
-kerb_lock () {
- local id=$1
- local ou=${2:+",${2}"}
- local l="
-dn: ${id}${ou},${DC}
-changetype: modify
-replace: krbLoginFailedCount
-krbLoginFailedCount: 4
--
-replace: krbLastFailedAuth
-krbLastFailedAuth: $UDATE
-"
- ldap_wrapper mod "${l}"
- return ${?}
-}
-
-###############################################################################
-#
-# LDAP: Unlocking account
-#
-ldap_unlock () {
- local id=$1
- local ou=${2:+",${2}"}
- local l="
-	dn: ${id}${ou},${DC}
-	changetype: modify
-	delete: pwdAccountLockedTime
-"
- ldap_wrapper mod "${l}"
- return ${?}
-}
-
-###############################################################################
-#
-# KERB: Locking account
-#
-kerb_unlock () {
- local id=$1
- local ou=${2:+",${2}"}
- local l="
-	dn: ${id}${ou},${DC}
-	changetype: modify
-	replace: krbLoginFailedCount
-	krbLoginFailedCount: 0
-"
- ldap_wrapper mod "${l}"
- return ${?}
-}
-
-###############################################################################
-#
 # Kerberos wrapper
 #
 kerb_wrapper() {
@@ -373,4 +283,44 @@ principal_present () {
  local uid=${1}
  sudo /usr/sbin/kadmin.local -q "getprinc $uid" | grep "Key: vno 1"
  return $?
+}
+
+###############################################################################
+#
+# Getting object's DN
+#
+get_dn () {
+ local id=$1
+ local object=${2:-account}
+ local numEntries
+ local dns
+ local retval
+ local filter
+ case $object in
+  account)
+   filter="(&(objectClass=posixAccount)(uid=${id}))"
+  ;;
+  principal)
+   filter="(&(objectClass=krbPrincipal)(krbPrincipalName=${id}@${REALM}))"
+  ;;
+ esac
+ if ldap_wrapper srch "$filter" "dn"; then
+  dns=$(echo "$MSG" | awk '/^dn:/{print $2}')
+  numEntries=$(echo "$dns" | wc -l)
+  if [ -n "$dns" ]; then
+   if [ $numEntries -ne 1 ]; then
+    dns=$(echo "$dns" | tr "\n" ";")
+    dns="Several DNs with uid \"${id}\" are found ($dns)"
+    retval=2
+   fi
+  else
+   dns="DN with uid \"${id}\" is not found"
+   retval=2
+  fi
+ else
+  dns="$MSG"
+  retval=1
+ fi
+ echo "$dns"
+ return $retval
 }

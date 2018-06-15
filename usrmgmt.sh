@@ -40,28 +40,49 @@ Usage: $(/bin/basename $0) [ACTION] [OPTIONS]
 
 OPTIONS depend on the ACTION:
 
- Creating a principal:
+- Creating a principal:
   createkrb {principal} {password}
 
- Changing principal's password:
+- Changing principal's password:
   chpasskrb {principal} {password}
 
- Changing principal's password as well as user's password in LDAP
- ('old_password' have to be specified if the password policy applied):
+- Changing principal's password as well as user's password in LDAP
+  ('old_password' have to be specified if the password policy applied):
   chpass {principal} {new_password} [old_password]
 
- Locking a principal:
-  lockkrb {principal}
+- Locking the principal:
+  lockkrb {uid}
 
- Unlocking a principal:
-  unlockkrb {principal}
+- Unlocking the principal:
+  unlockkrb {uid}
 
- Show this help:
+- Locking the account:
+  lockldap {uid}
+
+- Unlocking the account:
+  unlockldap {uid}
+
+- Locking the user (lockkrb + lockldap):
+  lock {uid}
+
+- Unlocking the user (unlockkrb + unlockldap):
+  unlock {uid}
+
+- Moving the user to OU for disabled accounts
+  move {uid}
+
+- Removig the account from project groups:
+  unproj {uid}
+
+- Disabling the user (lockkrb + lockldap + move + unproj):
+  disable {uid}
+
+- Show this help:
   help
 
 Example:
 
- Creating principal for user 'mr.pupkin' with password 'secret':
+- Creating principal for user 'mr.pupkin' with password 'secret':
   createkrb mr.pupkin secret
 "
  echo "$usage"
@@ -93,7 +114,7 @@ f_rotate () {
 #
 # Adding principal
 #
-f_add () {
+f_createkrb () {
  local id=$1
  local pass=$2
  local retval
@@ -111,7 +132,7 @@ f_add () {
 #
 # Changing principal's password
 #
-f_chpass_krb () {
+f_chpasskrb () {
  local id=$1
  local newpass=$2
  local retval
@@ -146,7 +167,7 @@ f_chpass () {
   if [ $lretval -eq 0 ]; then
    MSG="[DONE] $MSG"
    f_log "$MSG"
-   f_chpass_krb $id $newpass
+   f_chpasskrb $id $newpass
    kretval=$?
   else
    MSG="[FAIL] $MSG"
@@ -161,34 +182,155 @@ f_chpass () {
 
 ###############################################################################
 #
-# Locking user
+# Locking/Unlocking account/principal
 #
 f_lock () {
- local id=$1
+ local action=$1
+ local id=$2
+ local dn
  local retval
+ local ldif
+ local action_msg
+ local function_msg
 
- kerb_lock "krbPrincipalName=${id}@${REALM}" ${PRINCOU}
- retval=$?
- MSG=${MSG:-"Account ${id} has been locked"}
- MSG="(KERB __lock) $MSG"
+ case $action in
+  *ldap)
+   dn=$(get_dn ${id})
+   retval=$?
+  ;;
+  *krb)
+   dn=$(get_dn ${id} principal)
+   retval=$?
+  ;;
+ esac
+
+ if [ $retval -eq 0 ]; then
+  case $action in
+   lockldap)
+    ldif="
+dn: $dn
+changetype: modify
+add: pwdAccountLockedTime
+pwdAccountLockedTime: ${UDATE}
+-
+add: description
+description: Locked with sript \"$(basename $0)\"
+"
+    action_msg="Account ${id} has been locked"
+    function_msg="(LDAP __lock)"
+    ;;
+   unlockldap)
+    ldif="
+dn: $dn
+changetype: modify
+delete: pwdAccountLockedTime
+-
+delete: description
+"
+    action_msg="Account ${id} has been unlocked"
+    function_msg="(LDAP unlock)"
+    ;;
+   lockkrb)
+    ldif="
+dn: $dn
+changetype: modify
+replace: krbLoginFailedCount
+krbLoginFailedCount: 4
+-
+replace: krbLastFailedAuth
+krbLastFailedAuth: $UDATE
+"
+    action_msg="Principal ${id} has been locked"
+    function_msg="(KERB __lock)"
+    ;;
+   unlockkrb)
+    ldif="
+dn: $dn
+changetype: modify
+replace: krbLoginFailedCount
+krbLoginFailedCount: 0
+"
+    action_msg="Principal ${id} has been unlocked"
+    function_msg="(KERB unlock)"
+    ;;
+  esac
+  ldap_wrapper mod "${ldif}"
+  retval=$?
+  MSG=${MSG:-"$action_msg"}
+ else
+  MSG="$dn"
+ fi
+ MSG="$function_msg $MSG"
  [ $retval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
  return $retval
 }
 
+###############################################################################
+#
+# Moving account to "disabled" OU
+#
+f_move () {
+ local id=$1
+ local ldif
+ local retval
+
+ dn=$(get_dn ${id})
+ retval=$?
+
+ if [ $retval -eq 0 ]; then
+  ldif="
+dn: ${dn}
+changetype: moddn
+newrdn: uid=${id}
+deleteoldrdn: 1
+newsuperior: ${DISABLED_OU}
+"
+  ldap_wrapper mod "${ldif}"
+  retval=$?
+  MSG=${MSG:-"$id has been moved to OU for disabled accounts"}
+ else
+  MSG="$dn"
+ fi
+ MSG="(LDAP __move) $MSG"
+ [ $retval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
+ f_log "$MSG"
+ return $retval
+}
 
 ###############################################################################
 #
-# Unlocking user
+# Removig account from project groups
 #
-f_unlock () {
+f_unproj () {
  local id=$1
+ local dn
+ local dns
  local retval
+ local ldif
+ local failflag=0
 
- kerb_unlock "krbPrincipalName=${id}@${REALM}" ${PRINCOU}
- retval=$?
- MSG=${MSG:-"Account ${id} has been unlocked"}
- MSG="(KERB unlock) $MSG"
+ if ldap_wrapper srch "(&(objectClass=posixGroup)(cn=$PROJECT_GROUP_PREFIX*)(memberUid=$id))" "dn"; then
+  dns=$(echo "$MSG" | awk '/^dn:/{print $2}')
+  for dn in $dns; do
+   ldif="
+dn: $dn
+delete: memberUid
+memberUid: $id
+"
+   ldap_wrapper mod "${ldif}" || failflag=1
+  done
+  if [ $failflag -eq 0 ]; then
+   MSG="Account $id has been removed from all project groups"
+   retval=0
+  else
+   MSG="There are were some errors while removing account $id from project groups: $MSG"
+   retval=1
+  fi
+ else
+  retval=1
+ fi
+ MSG="(LDAP unproj) $MSG"
  [ $retval -eq 0 ] && MSG="[DONE] $MSG" || MSG="[FAIL] $MSG"
  f_log "$MSG"
  return $retval
@@ -208,16 +350,16 @@ OPTION_OLDPASS=${4}
 f_rotate
 
 case $OPTION_ACTION in
- add|createkrb)
+ createkrb)
   if [ -n "$OPTION_USERNAME" -a -n "$OPTION_NEWPASS" ]; then
-   f_add $OPTION_USERNAME $OPTION_NEWPASS
+   f_createkrb $OPTION_USERNAME $OPTION_NEWPASS
   else
    f_help
   fi
   ;;
  chpasskrb)
   if [ -n "$OPTION_USERNAME" -a -n "$OPTION_NEWPASS" ]; then
-   f_chpass_krb $OPTION_USERNAME $OPTION_NEWPASS
+   f_chpasskrb $OPTION_USERNAME $OPTION_NEWPASS
   else
    f_help
   fi
@@ -229,16 +371,70 @@ case $OPTION_ACTION in
    f_help
   fi
   ;;
- lock|lockkrb)
+ lockldap)
   if [ -n "$OPTION_USERNAME" ]; then
-   f_lock $OPTION_USERNAME
+   f_lock lockldap $OPTION_USERNAME
   else
    f_help
   fi
   ;;
- unlock|unlockkrb)
+ unlockldap)
   if [ -n "$OPTION_USERNAME" ]; then
-   f_unlock $OPTION_USERNAME
+   f_lock unlockldap $OPTION_USERNAME
+  else
+   f_help
+  fi
+  ;;
+ lockkrb)
+  if [ -n "$OPTION_USERNAME" ]; then
+   f_lock lockkrb $OPTION_USERNAME
+  else
+   f_help
+  fi
+  ;;
+ unlockkrb)
+  if [ -n "$OPTION_USERNAME" ]; then
+   f_lock unlockkrb $OPTION_USERNAME
+  else
+   f_help
+  fi
+  ;;
+ lock)
+  if [ -n "$OPTION_USERNAME" ]; then
+   f_lock lockldap $OPTION_USERNAME
+   f_lock lockkrb $OPTION_USERNAME
+  else
+   f_help
+  fi
+  ;;
+ unlock)
+  if [ -n "$OPTION_USERNAME" ]; then
+   f_lock unlockldap $OPTION_USERNAME
+   f_lock unlockkrb $OPTION_USERNAME
+  else
+   f_help
+  fi
+  ;;
+ move)
+  if [ -n "$OPTION_USERNAME" ]; then
+   f_move $OPTION_USERNAME
+  else
+   f_help
+  fi
+  ;;
+ unproj)
+  if [ -n "$OPTION_USERNAME" ]; then
+   f_unproj $OPTION_USERNAME
+  else
+   f_help
+  fi
+  ;;
+ disable)
+  if [ -n "$OPTION_USERNAME" ]; then
+   f_lock lockldap $OPTION_USERNAME
+   f_lock lockkrb $OPTION_USERNAME
+   f_move $OPTION_USERNAME
+   f_unproj $OPTION_USERNAME 
   else
    f_help
   fi

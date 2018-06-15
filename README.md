@@ -11,9 +11,10 @@ DC='dc=company,dc=domain'
 REALM='COMPANY.DOMAIN'
 LDAPUSER="uid=manager,ou=Staff,${DC}"
 LDAPPASS='password'
-PRINCOU="cn=${REALM},cn=kerberos,ou=kdcroot"
+DISABLED_OU="ou=Disabled,${DC}"
 LDAPURI="ldap://ldap.${REALM}"
 LDAPOUTPUT="/tmp/${RANDOM}"
+PROJECT_GROUP_PREFIX="PROJ"
 FUNC=/usr/local/bin/ldapkerb_functions.sh
 
 #
